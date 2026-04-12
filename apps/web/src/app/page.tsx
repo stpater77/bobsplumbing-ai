@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 type FormState = {
@@ -12,6 +13,7 @@ type FormState = {
   preferred_contact_method: "sms" | "call" | "email";
   language: "en" | "es";
   summary: string;
+  sms_consent: boolean;
 };
 
 const API_URL = "https://bobsplumbing-ai-production.up.railway.app/intake/form";
@@ -26,6 +28,7 @@ const initialState: FormState = {
   preferred_contact_method: "sms",
   language: "en",
   summary: "",
+  sms_consent: false,
 };
 
 export default function HomePage() {
@@ -45,12 +48,18 @@ export default function HomePage() {
     setError("");
 
     try {
+      const payload = {
+        ...form,
+        sms_consent_at: form.sms_consent ? new Date().toISOString() : null,
+        sms_consent_source: form.sms_consent ? "web_form" : null,
+      };
+
       const response = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -107,6 +116,9 @@ export default function HomePage() {
                 placeholder="+15551234567"
                 required
               />
+              <p className="mt-1 text-xs text-slate-400">
+                Use a mobile number that can receive text messages.
+              </p>
             </div>
           </div>
 
@@ -204,6 +216,38 @@ export default function HomePage() {
             />
           </div>
 
+          <div className="rounded-xl border border-slate-700 bg-slate-950 p-4">
+            <label className="flex items-start gap-3 text-sm text-slate-200">
+              <input
+                type="checkbox"
+                checked={form.sms_consent}
+                onChange={(e) => update("sms_consent", e.target.checked)}
+                className="mt-1"
+                required
+              />
+              <span>
+                I agree to receive service-related text messages from Bob&apos;s Plumbing at the
+                mobile number provided, including request confirmations, callback updates,
+                appointment notifications, and urgent service messages. Message frequency may vary.
+                Message and data rates may apply. Reply STOP to opt out and HELP for help.
+                Consent is not a condition of purchase. View our{" "}
+                <Link href="/privacy" className="text-blue-400 underline">
+                  Privacy Policy
+                </Link>{" "}
+                and{" "}
+                <Link href="/terms" className="text-blue-400 underline">
+                  Terms and Conditions
+                </Link>
+                .
+              </span>
+            </label>
+          </div>
+
+          <div className="rounded-lg border border-amber-700 bg-amber-950 px-4 py-3 text-sm text-amber-200">
+            For severe flooding, sewage backup, gas odor, or another immediate safety emergency,
+            call 911 or local emergency services where appropriate.
+          </div>
+
           <button
             type="submit"
             disabled={submitting}
@@ -211,6 +255,16 @@ export default function HomePage() {
           >
             {submitting ? "Submitting..." : "Submit Request"}
           </button>
+
+          <p className="text-sm text-slate-400">
+            <Link href="/privacy" className="text-blue-400 underline">
+              Privacy Policy
+            </Link>{" "}
+            |{" "}
+            <Link href="/terms" className="text-blue-400 underline">
+              Terms and Conditions
+            </Link>
+          </p>
 
           {result && (
             <div className="rounded-lg border border-green-700 bg-green-950 px-4 py-3 text-green-200">
