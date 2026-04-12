@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import cors from "@fastify/cors";
 import dotenv from "dotenv";
 import { Pool } from "pg";
 import { z } from "zod";
@@ -10,7 +11,9 @@ const app = Fastify({ logger: true });
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes("railway") ? { rejectUnauthorized: false } : false
+  ssl: process.env.DATABASE_URL?.includes("railway")
+    ? { rejectUnauthorized: false }
+    : false,
 });
 
 const hasTwilio =
@@ -35,7 +38,7 @@ const intakeSchema = z.object({
   preferred_contact_method: z.enum(["sms", "call", "email"]).optional().default("sms"),
   language: z.enum(["en", "es"]).optional().default("en"),
   summary: z.string().optional().default(""),
-  raw_payload: z.any().optional().default({})
+  raw_payload: z.any().optional().default({}),
 });
 
 function autoClassifyUrgency(input: {
@@ -57,7 +60,7 @@ function autoClassifyUrgency(input: {
     "burst pipe",
     "no water",
     "overflow",
-    "backing up"
+    "backing up",
   ];
 
   if (emergencyTriggers.some((t) => text.includes(t))) {
@@ -70,7 +73,7 @@ function autoClassifyUrgency(input: {
     "clog",
     "drain",
     "toilet",
-    "backup"
+    "backup",
   ];
 
   if (urgentTriggers.some((t) => text.includes(t))) {
@@ -94,7 +97,7 @@ async function sendConfirmationSms(phone: string, urgency: string) {
   await smsClient.messages.create({
     from: process.env.TWILIO_PHONE_NUMBER!,
     to: phone,
-    body
+    body,
   });
 }
 
@@ -135,7 +138,7 @@ async function createTicket(data: z.infer<typeof intakeSchema>) {
       data.preferred_contact_method,
       data.language,
       data.summary,
-      data.raw_payload
+      data.raw_payload,
     ]
   );
 
@@ -150,86 +153,99 @@ async function createTicket(data: z.infer<typeof intakeSchema>) {
   return ticket;
 }
 
-app.get("/health", async () => {
-  const db = await pool.query("select now() as now");
-  return {
-    ok: true,
-    db: true,
-    time: db.rows[0].now
-  };
-});
-
-app.post("/intake", async (request, reply) => {
-  const parsed = intakeSchema.safeParse(request.body);
-
-  if (!parsed.success) {
-    return reply.status(400).send({
-      ok: false,
-      error: parsed.error.flatten()
-    });
-  }
-
-  const ticket = await createTicket(parsed.data);
-
-  return {
-    ok: true,
-    route: ticket.urgency === "emergency" ? "emergency_escalation" : "standard_queue",
-    ticket
-  };
-});
-
-app.post("/intake/form", async (request, reply) => {
-  const parsed = intakeSchema.safeParse({
-    ...(request.body as object),
-    channel: "form",
-    source: "web_form"
+async function start() {
+  await app.register(cors, {
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "https://bobsplumbing-ai-production.up.railway.app",
+    ],
+    methods: ["GET", "POST", "OPTIONS"],
   });
 
-  if (!parsed.success) {
-    return reply.status(400).send({
-      ok: false,
-      error: parsed.error.flatten()
-    });
-  }
-
-  const ticket = await createTicket(parsed.data);
-
-  return {
-    ok: true,
-    route: ticket.urgency === "emergency" ? "emergency_escalation" : "standard_queue",
-    ticket
-  };
-});
-
-app.post("/intake/voice", async (request, reply) => {
-  const parsed = intakeSchema.safeParse({
-    ...(request.body as object),
-    channel: "voice",
-    source: "voice_agent"
+  app.get("/health", async () => {
+    const db = await pool.query("select now() as now");
+    return {
+      ok: true,
+      db: true,
+      time: db.rows[0].now,
+    };
   });
 
-  if (!parsed.success) {
-    return reply.status(400).send({
-      ok: false,
-      error: parsed.error.flatten()
+  app.post("/intake", async (request, reply) => {
+    const parsed = intakeSchema.safeParse(request.body);
+
+    if (!parsed.success) {
+      return reply.status(400).send({
+        ok: false,
+        error: parsed.error.flatten(),
+      });
+    }
+
+    const ticket = await createTicket(parsed.data);
+
+    return {
+      ok: true,
+      route: ticket.urgency === "emergency" ? "emergency_escalation" : "standard_queue",
+      ticket,
+    };
+  });
+
+  app.post("/intake/form", async (request, reply) => {
+    const parsed = intakeSchema.safeParse({
+      ...(request.body as object),
+      channel: "form",
+      source: "web_form",
     });
-  }
 
-  const ticket = await createTicket(parsed.data);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        ok: false,
+        error: parsed.error.flatten(),
+      });
+    }
 
-  return {
-    ok: true,
-    route: ticket.urgency === "emergency" ? "emergency_escalation" : "standard_queue",
-    ticket
-  };
-});
+    const ticket = await createTicket(parsed.data);
 
-app.listen({
-  port: Number(process.env.PORT || 3000),
-  host: "0.0.0.0"
-}).then(() => {
+    return {
+      ok: true,
+      route: ticket.urgency === "emergency" ? "emergency_escalation" : "standard_queue",
+      ticket,
+    };
+  });
+
+  app.post("/intake/voice", async (request, reply) => {
+    const parsed = intakeSchema.safeParse({
+      ...(request.body as object),
+      channel: "voice",
+      source: "voice_agent",
+    });
+
+    if (!parsed.success) {
+      return reply.status(400).send({
+        ok: false,
+        error: parsed.error.flatten(),
+      });
+    }
+
+    const ticket = await createTicket(parsed.data);
+
+    return {
+      ok: true,
+      route: ticket.urgency === "emergency" ? "emergency_escalation" : "standard_queue",
+      ticket,
+    };
+  });
+
+  await app.listen({
+    port: Number(process.env.PORT || 3000),
+    host: "0.0.0.0",
+  });
+
   app.log.info("bobsplumbing-ai API running");
-}).catch((err) => {
+}
+
+start().catch((err) => {
   app.log.error(err);
   process.exit(1);
 });
