@@ -155,11 +155,7 @@ async function createTicket(data: z.infer<typeof intakeSchema>) {
 
 async function start() {
   await app.register(cors, {
-    origin: [
-      "http://localhost:3000",
-      "http://localhost:3001",
-      "https://bobsplumbing-ai-production.up.railway.app",
-    ],
+    origin: true,
     methods: ["GET", "POST", "OPTIONS"],
   });
 
