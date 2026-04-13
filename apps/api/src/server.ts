@@ -55,6 +55,7 @@ function autoClassifyUrgency(input: {
   urgency?: "normal" | "urgent" | "emergency";
 }) {
   if (input.urgency === "emergency") return "emergency";
+  if (input.urgency === "urgent") return "urgent";
 
   const text = `${input.issue_type || ""} ${input.summary || ""}`.toLowerCase();
 
@@ -82,6 +83,8 @@ function autoClassifyUrgency(input: {
     "drain",
     "toilet",
     "backup",
+    "failed transfer",
+    "missed call",
   ];
 
   if (urgentTriggers.some((t) => text.includes(t))) {
@@ -349,6 +352,7 @@ async function start() {
       source: "missed_call",
       summary: "Missed inbound call",
       preferred_contact_method: "sms",
+      urgency: "urgent",
     });
 
     if (!result.ok) {
