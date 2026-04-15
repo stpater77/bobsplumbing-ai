@@ -26,6 +26,10 @@ const smsClient = hasTwilio
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
   : null;
 
+const hasN8nWebhook =
+  !!process.env.N8N_WEBHOOK_URL &&
+  process.env.N8N_WEBHOOK_URL !== "replace_me";
+
 const intakeSchema = z.object({
   channel: z.enum(["voice", "form", "sms", "chat"]).default("voice"),
   caller_phone: z.string().min(7, "caller_phone is required"),
@@ -42,11 +46,54 @@ const intakeSchema = z.object({
 });
 
 type IntakeInput = z.infer<typeof intakeSchema>;
+
 type TicketRow = {
-  id: number | string;
+  id: number;
+  ticket_id: string;
+  channel: "voice" | "form" | "sms" | "chat";
+  caller_phone: string;
+  caller_name: string;
+  service_address: string;
+  home_or_business: "home" | "business";
+  issue_type: string;
+  urgency: "normal" | "urgent" | "emergency";
+  status: string;
+  source: string;
+  preferred_contact_method: "sms" | "call" | "email";
+  language: "en" | "es";
+  summary: string;
+  raw_payload: unknown;
+  created_at: string;
+};
+
+type TicketInsertRow = {
+  id: number;
+  ticket_id: string;
   urgency: "normal" | "urgent" | "emergency";
   status: string;
   created_at: string;
+};
+
+type N8nTicketPayload = {
+  event_type: "ticket.created";
+  ticket: {
+    id: number;
+    ticket_id: string;
+    channel: string;
+    caller_phone: string;
+    caller_name: string;
+    service_address: string;
+    home_or_business: string;
+    issue_type: string;
+    urgency: string;
+    status: string;
+    source: string;
+    preferred_contact_method: string;
+    language: string;
+    summary: string;
+    raw_payload: unknown;
+    created_at: string;
+  };
 };
 
 function autoClassifyUrgency(input: {
@@ -94,7 +141,10 @@ function autoClassifyUrgency(input: {
   return "normal";
 }
 
-function getRouteForTicket(ticket: TicketRow, source?: string) {
+function getRouteForTicket(
+  ticket: Pick<TicketRow, "urgency">,
+  source?: string
+) {
   if (source === "failed_transfer") return "callback_recovery";
   if (source === "missed_call") return "callback_recovery";
   if (source === "after_hours" && ticket.urgency === "emergency") {
@@ -123,6 +173,30 @@ function buildSmsBody(source: string, urgency: string) {
   }
 
   return "Bob's Plumbing: We received your request and will follow up shortly.";
+}
+
+function buildN8nPayload(ticket: TicketRow): N8nTicketPayload {
+  return {
+    event_type: "ticket.created",
+    ticket: {
+      id: ticket.id,
+      ticket_id: ticket.ticket_id,
+      channel: ticket.channel,
+      caller_phone: ticket.caller_phone,
+      caller_name: ticket.caller_name,
+      service_address: ticket.service_address,
+      home_or_business: ticket.home_or_business,
+      issue_type: ticket.issue_type,
+      urgency: ticket.urgency,
+      status: ticket.status,
+      source: ticket.source,
+      preferred_contact_method: ticket.preferred_contact_method,
+      language: ticket.language,
+      summary: ticket.summary,
+      raw_payload: ticket.raw_payload,
+      created_at: ticket.created_at,
+    },
+  };
 }
 
 async function sendConfirmationSms(phone: string, urgency: string, source: string) {
@@ -167,7 +241,45 @@ async function sendConfirmationSms(phone: string, urgency: string, source: strin
   );
 }
 
-async function createTicket(data: IntakeInput) {
+async function sendTicketToN8n(ticket: TicketRow) {
+  if (!hasN8nWebhook) {
+    app.log.info("N8N webhook not configured; skipping CRM sync");
+    return;
+  }
+
+  const payload = buildN8nPayload(ticket);
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  if (process.env.N8N_WEBHOOK_SECRET) {
+    headers["x-bobs-plumbing-secret"] = process.env.N8N_WEBHOOK_SECRET;
+  }
+
+  const response = await fetch(process.env.N8N_WEBHOOK_URL!, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(
+      `N8N webhook failed with status ${response.status}${text ? `: ${text}` : ""}`
+    );
+  }
+
+  app.log.info(
+    {
+      ticket_id: ticket.ticket_id,
+      n8nWebhookUrl: process.env.N8N_WEBHOOK_URL,
+    },
+    "Ticket successfully sent to n8n"
+  );
+}
+
+async function createTicket(data: IntakeInput): Promise<TicketRow> {
   const finalUrgency = autoClassifyUrgency(data);
 
   app.log.info(
@@ -182,10 +294,15 @@ async function createTicket(data: IntakeInput) {
     "Creating ticket"
   );
 
-  const result = await pool.query(
+  const result = await pool.query<TicketInsertRow>(
     `
-    insert into tickets
+    WITH next_ticket_id AS (
+      SELECT nextval(pg_get_serial_sequence('tickets', 'id')) AS id
+    )
+    INSERT INTO tickets
     (
+      id,
+      ticket_id,
       channel,
       caller_phone,
       caller_name,
@@ -200,9 +317,12 @@ async function createTicket(data: IntakeInput) {
       summary,
       raw_payload
     )
-    values
-    ($1,$2,$3,$4,$5,$6,$7,'new',$8,$9,$10,$11,$12)
-    returning id, urgency, status, created_at
+    SELECT
+      next_ticket_id.id,
+      'BP-HC-' || EXTRACT(YEAR FROM now())::text || '-' || LPAD(next_ticket_id.id::text, 4, '0'),
+      $1,$2,$3,$4,$5,$6,$7,'new',$8,$9,$10,$11,$12
+    FROM next_ticket_id
+    RETURNING id, ticket_id, urgency, status, created_at
     `,
     [
       data.channel,
@@ -220,11 +340,31 @@ async function createTicket(data: IntakeInput) {
     ]
   );
 
-  const ticket: TicketRow = result.rows[0];
+  const inserted = result.rows[0];
+
+  const ticket: TicketRow = {
+    id: inserted.id,
+    ticket_id: inserted.ticket_id,
+    channel: data.channel,
+    caller_phone: data.caller_phone,
+    caller_name: data.caller_name,
+    service_address: data.service_address,
+    home_or_business: data.home_or_business,
+    issue_type: data.issue_type,
+    urgency: inserted.urgency,
+    status: inserted.status,
+    source: data.source,
+    preferred_contact_method: data.preferred_contact_method,
+    language: data.language,
+    summary: data.summary,
+    raw_payload: data.raw_payload,
+    created_at: inserted.created_at,
+  };
 
   app.log.info(
     {
-      ticketId: ticket.id,
+      id: ticket.id,
+      ticket_id: ticket.ticket_id,
       urgency: ticket.urgency,
       status: ticket.status,
       createdAt: ticket.created_at,
@@ -234,7 +374,7 @@ async function createTicket(data: IntakeInput) {
   );
 
   try {
-    await sendConfirmationSms(data.caller_phone, ticket.urgency, data.source);
+    await sendConfirmationSms(ticket.caller_phone, ticket.urgency, ticket.source);
   } catch (err: any) {
     app.log.error(
       {
@@ -242,8 +382,21 @@ async function createTicket(data: IntakeInput) {
         code: err?.code,
         status: err?.status,
         moreInfo: err?.moreInfo,
+        ticket_id: ticket.ticket_id,
       },
       "SMS send failed"
+    );
+  }
+
+  try {
+    await sendTicketToN8n(ticket);
+  } catch (err: any) {
+    app.log.error(
+      {
+        message: err?.message,
+        ticket_id: ticket.ticket_id,
+      },
+      "N8N sync failed after ticket creation"
     );
   }
 
@@ -286,12 +439,13 @@ async function start() {
       hasAccountSid: !!process.env.TWILIO_ACCOUNT_SID,
       hasAuthToken: !!process.env.TWILIO_AUTH_TOKEN,
       hasPhoneNumber: !!process.env.TWILIO_PHONE_NUMBER,
+      hasN8nWebhook,
     },
     "Startup configuration"
   );
 
   app.get("/health", async () => {
-    const db = await pool.query("select now() as now");
+    const db = await pool.query("SELECT now() AS now");
     return {
       ok: true,
       db: true,
