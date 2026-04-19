@@ -34,6 +34,7 @@ const intakeSchema = z.object({
   channel: z.enum(["voice", "form", "sms", "chat"]).default("voice"),
   caller_phone: z.string().min(7, "caller_phone is required"),
   caller_name: z.string().optional().default("Unknown"),
+  email: z.string().email().optional().default(""),
   service_address: z.string().optional().default("Unknown"),
   home_or_business: z.enum(["home", "business"]).optional().default("home"),
   issue_type: z.string().optional().default("general"),
@@ -53,6 +54,7 @@ type TicketRow = {
   channel: "voice" | "form" | "sms" | "chat";
   caller_phone: string;
   caller_name: string;
+  email: string;
   service_address: string;
   home_or_business: "home" | "business";
   issue_type: string;
@@ -82,6 +84,7 @@ type N8nTicketPayload = {
     channel: string;
     caller_phone: string;
     caller_name: string;
+    email: string;
     service_address: string;
     home_or_business: string;
     issue_type: string;
@@ -184,6 +187,7 @@ function buildN8nPayload(ticket: TicketRow): N8nTicketPayload {
       channel: ticket.channel,
       caller_phone: ticket.caller_phone,
       caller_name: ticket.caller_name,
+      email: ticket.email,
       service_address: ticket.service_address,
       home_or_business: ticket.home_or_business,
       issue_type: ticket.issue_type,
@@ -306,6 +310,7 @@ async function createTicket(data: IntakeInput): Promise<TicketRow> {
       channel,
       caller_phone,
       caller_name,
+      email,
       service_address,
       home_or_business,
       issue_type,
@@ -320,7 +325,7 @@ async function createTicket(data: IntakeInput): Promise<TicketRow> {
     SELECT
       next_ticket_id.id,
       'BP-HC-' || EXTRACT(YEAR FROM now())::text || '-' || LPAD(next_ticket_id.id::text, 4, '0'),
-      $1,$2,$3,$4,$5,$6,$7,'new',$8,$9,$10,$11,$12
+      $1,$2,$3,$4,$5,$6,$7,$8,'new',$9,$10,$11,$12,$13
     FROM next_ticket_id
     RETURNING id, ticket_id, urgency, status, created_at
     `,
@@ -328,6 +333,7 @@ async function createTicket(data: IntakeInput): Promise<TicketRow> {
       data.channel,
       data.caller_phone,
       data.caller_name,
+      data.email,
       data.service_address,
       data.home_or_business,
       data.issue_type,
@@ -348,6 +354,7 @@ async function createTicket(data: IntakeInput): Promise<TicketRow> {
     channel: data.channel,
     caller_phone: data.caller_phone,
     caller_name: data.caller_name,
+    email: data.email,
     service_address: data.service_address,
     home_or_business: data.home_or_business,
     issue_type: data.issue_type,
