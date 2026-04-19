@@ -6,6 +6,7 @@ import { useState } from "react";
 type FormState = {
   caller_name: string;
   caller_phone: string;
+  email: string;
   service_address: string;
   home_or_business: "home" | "business";
   issue_type: string;
@@ -21,6 +22,7 @@ const API_URL = "https://bobsplumbing-ai-production.up.railway.app/intake/form";
 const initialState: FormState = {
   caller_name: "",
   caller_phone: "",
+  email: "",
   service_address: "",
   home_or_business: "home",
   issue_type: "",
@@ -120,6 +122,17 @@ export default function HomePage() {
                 Use a mobile number that can receive text messages.
               </p>
             </div>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium">Email</label>
+            <input
+              type="email"
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none"
+              value={form.email}
+              onChange={(e) => update("email", e.target.value)}
+              placeholder="name@example.com"
+            />
           </div>
 
           <div>
