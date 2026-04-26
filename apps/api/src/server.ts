@@ -34,7 +34,7 @@ const intakeSchema = z.object({
   channel: z.enum(["voice", "form", "sms", "chat"]).default("voice"),
   caller_phone: z.string().min(7, "caller_phone is required"),
   caller_name: z.string().optional().default("Unknown"),
-  email: z.string().email().optional().default(""),
+  email: z.union([z.string().email(), z.literal("")]).optional().default(""),
   service_address: z.string().optional().default("Unknown"),
   home_or_business: z.enum(["home", "business"]).optional().default("home"),
   issue_type: z.string().optional().default("general"),
