@@ -40,7 +40,13 @@ const intakeSchema = z.object({
   issue_type: z.string().optional().default("general"),
   urgency: z.enum(["normal", "urgent", "emergency"]).default("normal"),
   source: z.string().optional().default("inbound"),
-  preferred_contact_method: z.enum(["sms", "call", "email"]).optional().default("sms"),
+  preferred_contact_method: z.enum(["sms", "call", "email"]).optional().default("call"),
+  sms_consent: z.boolean().optional().default(false),
+  sms_consent_at: z.union([z.string(), z.null()]).optional().default(null),
+  sms_consent_source: z.union([z.string(), z.null()]).optional().default(null),
+  terms_accepted: z.boolean().optional().default(false),
+  terms_accepted_at: z.union([z.string(), z.null()]).optional().default(null),
+  terms_accepted_source: z.union([z.string(), z.null()]).optional().default(null),
   language: z.enum(["en", "es"]).optional().default("en"),
   summary: z.string().optional().default(""),
   raw_payload: z.any().optional().default({}),
@@ -380,18 +386,29 @@ async function createTicket(data: IntakeInput): Promise<TicketRow> {
     "Ticket created"
   );
 
-  try {
-    await sendConfirmationSms(ticket.caller_phone, ticket.urgency, ticket.source);
-  } catch (err: any) {
-    app.log.error(
+  if (ticket.preferred_contact_method === "sms" && data.sms_consent) {
+    try {
+      await sendConfirmationSms(ticket.caller_phone, ticket.urgency, ticket.source);
+    } catch (err: any) {
+      app.log.error(
+        {
+          message: err?.message,
+          code: err?.code,
+          status: err?.status,
+          moreInfo: err?.moreInfo,
+          ticket_id: ticket.ticket_id,
+        },
+        "SMS send failed"
+      );
+    }
+  } else {
+    app.log.info(
       {
-        message: err?.message,
-        code: err?.code,
-        status: err?.status,
-        moreInfo: err?.moreInfo,
         ticket_id: ticket.ticket_id,
+        preferred_contact_method: ticket.preferred_contact_method,
+        sms_consent: data.sms_consent,
       },
-      "SMS send failed"
+      "Skipping SMS because user did not opt in or did not choose SMS"
     );
   }
 
