@@ -15,6 +15,7 @@ type FormState = {
   language: "en" | "es";
   summary: string;
   sms_consent: boolean;
+  terms_accepted: boolean;
 };
 
 const API_URL = "https://bobsplumbing-ai-production.up.railway.app/intake/form";
@@ -27,10 +28,11 @@ const initialState: FormState = {
   home_or_business: "home",
   issue_type: "",
   urgency: "normal",
-  preferred_contact_method: "sms",
+  preferred_contact_method: "call",
   language: "en",
   summary: "",
   sms_consent: false,
+  terms_accepted: false,
 };
 
 export default function HomePage() {
@@ -49,11 +51,35 @@ export default function HomePage() {
     setResult("");
     setError("");
 
+    if (!form.terms_accepted) {
+      setSubmitting(false);
+      setError(
+        "You must accept the Privacy Policy and Terms and Conditions to submit a service request."
+      );
+      return;
+    }
+
+    if (form.preferred_contact_method === "sms" && !form.sms_consent) {
+      setSubmitting(false);
+      setError(
+        "To choose SMS as your preferred contact method, you must check the optional SMS consent box. Otherwise, choose Call or Email."
+      );
+      return;
+    }
+
+    if (form.preferred_contact_method === "email" && !form.email.trim()) {
+      setSubmitting(false);
+      setError("Please enter an email address or choose Call or SMS as your preferred contact method.");
+      return;
+    }
+
     try {
       const payload = {
         ...form,
         sms_consent_at: form.sms_consent ? new Date().toISOString() : null,
         sms_consent_source: form.sms_consent ? "web_form" : null,
+        terms_accepted_at: form.terms_accepted ? new Date().toISOString() : null,
+        terms_accepted_source: form.terms_accepted ? "web_form" : null,
       };
 
       const response = await fetch(API_URL, {
@@ -71,7 +97,9 @@ export default function HomePage() {
       }
 
       setResult(
-        `Request submitted successfully. Ticket ID: ${data?.ticket?.id ?? "N/A"} | Route: ${data?.route ?? "unknown"}`
+        `Request submitted successfully. Ticket ID: ${
+          data?.ticket?.id ?? "N/A"
+        } | Route: ${data?.route ?? "unknown"}`
       );
       setForm(initialState);
     } catch (err) {
@@ -87,10 +115,13 @@ export default function HomePage() {
     <main className="min-h-screen bg-slate-950 text-white">
       <div className="mx-auto max-w-3xl px-6 py-12">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold tracking-tight">Bob&apos;s Plumbing</h1>
+          <h1 className="text-4xl font-bold tracking-tight">
+            Bob&apos;s Plumbing
+          </h1>
           <p className="mt-2 text-slate-300">Service Request Intake Form</p>
           <p className="mt-1 text-sm text-slate-400">
-            This form feeds the same routing system as the AI dispatcher.
+            Submit a plumbing service request. A team member will follow up using
+            your selected contact method.
           </p>
         </div>
 
@@ -110,7 +141,9 @@ export default function HomePage() {
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium">Phone</label>
+              <label className="mb-2 block text-sm font-medium">
+                Mobile Phone
+              </label>
               <input
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none"
                 value={form.caller_phone}
@@ -119,7 +152,8 @@ export default function HomePage() {
                 required
               />
               <p className="mt-1 text-xs text-slate-400">
-                Use a mobile number that can receive text messages.
+                Enter the phone number where Bob&apos;s Plumbing can contact you
+                about this request.
               </p>
             </div>
           </div>
@@ -133,10 +167,15 @@ export default function HomePage() {
               onChange={(e) => update("email", e.target.value)}
               placeholder="name@example.com"
             />
+            <p className="mt-1 text-xs text-slate-400">
+              Required only if you choose Email as your preferred contact method.
+            </p>
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium">Service Address</label>
+            <label className="mb-2 block text-sm font-medium">
+              Service Address
+            </label>
             <input
               className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none"
               value={form.service_address}
@@ -147,12 +186,17 @@ export default function HomePage() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="mb-2 block text-sm font-medium">Home or Business</label>
+              <label className="mb-2 block text-sm font-medium">
+                Home or Business
+              </label>
               <select
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none"
                 value={form.home_or_business}
                 onChange={(e) =>
-                  update("home_or_business", e.target.value as "home" | "business")
+                  update(
+                    "home_or_business",
+                    e.target.value as "home" | "business"
+                  )
                 }
               >
                 <option value="home">Home</option>
@@ -161,7 +205,9 @@ export default function HomePage() {
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium">Preferred Contact Method</label>
+              <label className="mb-2 block text-sm font-medium">
+                Preferred Contact Method
+              </label>
               <select
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none"
                 value={form.preferred_contact_method}
@@ -172,10 +218,13 @@ export default function HomePage() {
                   )
                 }
               >
-                <option value="sms">SMS</option>
                 <option value="call">Call</option>
                 <option value="email">Email</option>
+                <option value="sms">SMS</option>
               </select>
+              <p className="mt-1 text-xs text-slate-400">
+                SMS requires the optional SMS consent checkbox below.
+              </p>
             </div>
           </div>
 
@@ -185,7 +234,9 @@ export default function HomePage() {
               <select
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none"
                 value={form.language}
-                onChange={(e) => update("language", e.target.value as "en" | "es")}
+                onChange={(e) =>
+                  update("language", e.target.value as "en" | "es")
+                }
               >
                 <option value="en">English</option>
                 <option value="es">Spanish</option>
@@ -193,7 +244,9 @@ export default function HomePage() {
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium">Emergency?</label>
+              <label className="mb-2 block text-sm font-medium">
+                Emergency?
+              </label>
               <select
                 className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none"
                 value={form.urgency}
@@ -219,7 +272,9 @@ export default function HomePage() {
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium">Description</label>
+            <label className="mb-2 block text-sm font-medium">
+              Description
+            </label>
             <textarea
               className="min-h-32 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 outline-none"
               value={form.summary}
@@ -233,17 +288,13 @@ export default function HomePage() {
             <label className="flex items-start gap-3 text-sm text-slate-200">
               <input
                 type="checkbox"
-                checked={form.sms_consent}
-                onChange={(e) => update("sms_consent", e.target.checked)}
+                checked={form.terms_accepted}
+                onChange={(e) => update("terms_accepted", e.target.checked)}
                 className="mt-1"
                 required
               />
               <span>
-                I agree to receive service-related text messages from Bob&apos;s Plumbing at the
-                mobile number provided, including request confirmations, callback updates,
-                appointment notifications, and urgent service messages. Message frequency may vary.
-                Message and data rates may apply. Reply STOP to opt out and HELP for help.
-                Consent is not a condition of purchase. View our{" "}
+                I have read and agree to Bob&apos;s Plumbing&apos;s{" "}
                 <Link href="/privacy" className="text-blue-400 underline">
                   Privacy Policy
                 </Link>{" "}
@@ -256,9 +307,33 @@ export default function HomePage() {
             </label>
           </div>
 
+          <div className="rounded-xl border border-slate-700 bg-slate-950 p-4">
+            <label className="flex items-start gap-3 text-sm text-slate-200">
+              <input
+                type="checkbox"
+                checked={form.sms_consent}
+                onChange={(e) => update("sms_consent", e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                I agree to receive service-related text messages from
+                Bob&apos;s Plumbing at the mobile number provided, including
+                request confirmations, callback updates, appointment
+                notifications, and urgent service messages. Message frequency
+                varies. Message and data rates may apply. Reply STOP to opt out
+                and HELP for help. Consent is not a condition of purchase.
+              </span>
+            </label>
+            <p className="mt-3 text-xs text-slate-400">
+              This SMS consent checkbox is optional and is not required to submit
+              a plumbing service request.
+            </p>
+          </div>
+
           <div className="rounded-lg border border-amber-700 bg-amber-950 px-4 py-3 text-sm text-amber-200">
-            For severe flooding, sewage backup, gas odor, or another immediate safety emergency,
-            call 911 or local emergency services where appropriate.
+            For severe flooding, sewage backup, gas odor, or another immediate
+            safety emergency, call 911 or local emergency services where
+            appropriate.
           </div>
 
           <button
