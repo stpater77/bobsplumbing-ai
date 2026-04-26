@@ -71,6 +71,12 @@ type TicketRow = {
   language: "en" | "es";
   summary: string;
   raw_payload: unknown;
+  sms_consent: boolean;
+  sms_consent_at: string | null;
+  sms_consent_source: string | null;
+  terms_accepted: boolean;
+  terms_accepted_at: string | null;
+  terms_accepted_source: string | null;
   created_at: string;
 };
 
@@ -101,6 +107,12 @@ type N8nTicketPayload = {
     language: string;
     summary: string;
     raw_payload: unknown;
+    sms_consent: boolean;
+    sms_consent_at: string | null;
+    sms_consent_source: string | null;
+    terms_accepted: boolean;
+    terms_accepted_at: string | null;
+    terms_accepted_source: string | null;
     created_at: string;
   };
 };
@@ -326,12 +338,18 @@ async function createTicket(data: IntakeInput): Promise<TicketRow> {
       preferred_contact_method,
       language,
       summary,
-      raw_payload
+      raw_payload,
+      sms_consent,
+      sms_consent_at,
+      sms_consent_source,
+      terms_accepted,
+      terms_accepted_at,
+      terms_accepted_source
     )
     SELECT
       next_ticket_id.id,
       'BP-HC-' || EXTRACT(YEAR FROM now())::text || '-' || LPAD(next_ticket_id.id::text, 4, '0'),
-      $1,$2,$3,$4,$5,$6,$7,$8,'new',$9,$10,$11,$12,$13
+      $1,$2,$3,$4,$5,$6,$7,$8,'new',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
     FROM next_ticket_id
     RETURNING id, ticket_id, urgency, status, created_at
     `,
@@ -349,6 +367,12 @@ async function createTicket(data: IntakeInput): Promise<TicketRow> {
       data.language,
       data.summary,
       data.raw_payload,
+      data.sms_consent,
+      data.sms_consent_at,
+      data.sms_consent_source,
+      data.terms_accepted,
+      data.terms_accepted_at,
+      data.terms_accepted_source,
     ]
   );
 
@@ -371,6 +395,12 @@ async function createTicket(data: IntakeInput): Promise<TicketRow> {
     language: data.language,
     summary: data.summary,
     raw_payload: data.raw_payload,
+    sms_consent: data.sms_consent,
+    sms_consent_at: data.sms_consent_at,
+    sms_consent_source: data.sms_consent_source,
+    terms_accepted: data.terms_accepted,
+    terms_accepted_at: data.terms_accepted_at,
+    terms_accepted_source: data.terms_accepted_source,
     created_at: inserted.created_at,
   };
 
